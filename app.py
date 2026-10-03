@@ -31,7 +31,7 @@ PROVIDERS = {
     },
     "Google Gemini": {
         "env": "GOOGLE_API_KEY",
-        "chat_model": "gemini-2.0-flash",
+        "chat_model": "gemini-3.8-flash",
         "embed_model": "models/gemini-embedding-001",
     },
 }
