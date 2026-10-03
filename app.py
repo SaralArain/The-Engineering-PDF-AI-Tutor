@@ -1,4 +1,4 @@
-""" The Engineering PDF AI Tutor (v2) ---------------------------------- Upload technical PDFs -> chat, formulas, flashcards, quizzes, summaries. Stack: Streamlit + LangChain + FAISS + Google Gemini Optional pictures (put them in an assets/ folder next to app.py): assets/background.jpg -> full-page background assets/logo.png -> faint watermark, bottom-right Run: streamlit run app.py """
+""" The Engineering PDF AI Tutor (v2) ---------------------------------- Upload technical PDFs -> chat, formulas, flashcards, quizzes, summaries. Stack: Streamlit + LangChain + FAISS + (OpenAI or Google Gemini) Optional pictures (put them in an assets/ folder next to app.py): assets/background.jpg -> full-page background assets/logo.png -> faint watermark, bottom-right Run: streamlit run app.py """
 
 import base64
 import os
@@ -24,6 +24,11 @@ ASSETS = Path(__file__).parent / "assets"
 ANSWER_MARK = "<<<ANSWERS>>>"   # LLM puts this line before quiz answers
 
 PROVIDERS = {
+    "OpenAI": {
+        "env": "OPENAI_API_KEY",
+        "chat_model": "gpt-4o-mini",
+        "embed_model": "text-embedding-3-small",
+    },
     "Google Gemini": {
         "env": "GOOGLE_API_KEY",
         "chat_model": "gemini-3.8-flash",
@@ -128,17 +133,23 @@ def inject_css():
 def get_models(provider: str, api_key: str):
     """Return (embeddings, llm) for the chosen provider."""
     cfg = PROVIDERS[provider]
-    from langchain_google_genai import (
-        ChatGoogleGenerativeAI,
-        GoogleGenerativeAIEmbeddings,
-    )
+    if provider == "OpenAI":
+        from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model=cfg["embed_model"], google_api_key=api_key
-    )
-    llm = ChatGoogleGenerativeAI(
-        model=cfg["chat_model"], temperature=0.2, google_api_key=api_key
-    )
+        embeddings = OpenAIEmbeddings(model=cfg["embed_model"], api_key=api_key)
+        llm = ChatOpenAI(model=cfg["chat_model"], temperature=0.2, api_key=api_key)
+    else:
+        from langchain_google_genai import (
+            ChatGoogleGenerativeAI,
+            GoogleGenerativeAIEmbeddings,
+        )
+
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model=cfg["embed_model"], google_api_key=api_key
+        )
+        llm = ChatGoogleGenerativeAI(
+            model=cfg["chat_model"], temperature=0.2, google_api_key=api_key
+        )
     return embeddings, llm
 
 
@@ -255,24 +266,17 @@ def chat_as_markdown() -> str:
     return "\n".join(lines)
 
 
-def get_api_key(provider: str) -> str:
-    """Read the key privately: .streamlit/secrets.toml first, then .env / environment."""
-    name = PROVIDERS[provider]["env"]
-    try:
-        key = st.secrets[name]
-    except Exception:  # no secrets file or key missing
-        key = os.getenv(name, "")
-    return str(key).strip()
-
-
 def sidebar():
     """Returns (provider, api_key, files, style, settings dict)."""
     with st.sidebar:
         st.markdown("### ⚙️ Setup")
-        provider = "Google Gemini"
-        api_key = get_api_key(provider)
-        if not api_key:
-            st.error("Gemini API key not found. Add GOOGLE_API_KEY to .streamlit/secrets.toml.")
+        provider = st.selectbox("LLM provider", list(PROVIDERS))
+        api_key = st.text_input(
+            "API key",
+            value=os.getenv(PROVIDERS[provider]["env"], ""),
+            type="password",
+            help="Or put it in a .env file.",
+        )
         files = st.file_uploader("Upload PDF(s)", type=["pdf"], accept_multiple_files=True)
 
         st.markdown("### 🎛️ Study mode")
@@ -384,7 +388,7 @@ def main():
     show_hero_and_stats()
 
     if st.session_state.vector_store is None:
-        st.info("👈 Upload at least one PDF to begin.")
+        st.info("👈 Add your API key and upload at least one PDF to begin.")
         return
 
     for m in st.session_state.messages:
